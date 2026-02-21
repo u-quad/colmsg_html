@@ -11,29 +11,68 @@ NICK_NAME="<b>としくん</b>"
 # The HTML files will be by month and saved in folders by member name
 OUTPUT_PATH="/Prog/colmsg_html/t"
 
+# アイコン画像のパスを設定
+AVATAR_IMAGE_PATH = "icon.jpeg"
 
 MEMBER_LIST=[]
 MONTH_LIST=[]
 MAIN_LIST=[]
 
 HTML_HEADER=" \
-<html> \
+<html lang='ja'> \
 <head> \
-<style> \
- td { font-size: 9pt; background-color: #f0f0f0; color: #333; padding: 10px; border: 1px solid #ccc}  \
- td:hover {background-color:#cce5ff}  \
-</style> \
+<meta charset='utf-8'> \
+<meta http-equiv='Content-Language' content='ja'> \
+<meta name='viewport' content='width=device-width, initial-scale=1'> \
+<link rel='stylesheet' href='styles.css'> \
+<script> \
+function showMonth(month) { \
+  document.querySelectorAll('.message-group').forEach(group => { \
+    group.classList.remove('active'); \
+  }); \
+  document.getElementById('month-' + month).classList.add('active'); \
+} \
+function initializeLazyVideos() { \
+  const videos = document.querySelectorAll('video'); \
+  const options = { \
+    root: null, \
+    rootMargin: '50px', \
+    threshold: 0.1 \
+  }; \
+  \
+  const observer = new IntersectionObserver((entries, observer) => { \
+    entries.forEach(entry => { \
+      if (entry.isIntersecting) { \
+        const video = entry.target; \
+        video.setAttribute('preload', 'metadata'); \
+        observer.unobserve(video); \
+      } \
+    }); \
+  }, options); \
+  \
+  videos.forEach(video => { \
+    observer.observe(video); \
+  }); \
+} \
+\
+window.addEventListener('DOMContentLoaded', initializeLazyVideos); \
+</script> \
 </head> \
 <body> \
-<table> \
-<tr><td width='130'>Date / Time (GMT)</td><td>Message</td></tr> \
 "
 
 HTML_FOOTER=" \
-</table> \
+</div> \
 </body> \
 </html> \
 "
+
+# HTMLヘッダーを生成する関数を追加
+def getHtmlHeader():
+    icon_path = os.path.join(OUTPUT_PATH, AVATAR_IMAGE_PATH)
+    # スタイルタグでアバター画像のパスを上書き
+    avatar_style = f"<style>.avatar {{ background-image: url('{icon_path}'); }}</style>"
+    return HTML_HEADER + avatar_style
 
 def readTxtFile(file_path):
   f=open(file_path, 'r', encoding='utf-8')
@@ -77,7 +116,7 @@ def getGroupName(item_path):
 def getFileNamesFromColMsg(parent_directory):
     # List to store all file names
     file_names = []
-
+    
     # Loop through each item in the parent directory
     for item in os.listdir(parent_directory):
         item_path = os.path.join(parent_directory, item)
@@ -108,48 +147,81 @@ def getMessageFileName(member, month):
     return directory + "/" + member + month +".html" 
 
 def getTxtContent(record):
-    html=""
-    html+="<tr><td>" + record[2] + "</td>"
-    html+="<td>"+record[5].replace("%%%", NICK_NAME)+"</td>"
-    html+="</tr>\n"
+    html = ""
+    html += "<div class='message'>" \
+            "<div class='avatar'></div>" \
+            "<div class='message-content'>" \
+            "<div class='message-bubble'>" + record[5].replace("%%%", NICK_NAME) + "</div>" \
+            "<span class='message-time'>" + record[2] + "</span>" \
+            "</div></div>\n"
     return html
 
 def getJpgContent(record):
-    html=""
-    html+="<tr><td>" + record[2] + "</td>"
-    html+="<td><img src='" + record[4] + "/" + record[3] + "' /></td>"
-    html+="</tr>\n"
+    html = ""
+    html += "<div class='message'>" \
+            "<div class='avatar'></div>" \
+            "<div class='message-content'>" \
+            "<div class='message-bubble'><img src='" + record[4] + "/" + record[3] + "' /></div>" \
+            "<span class='message-time'>" + record[2] + "</span>" \
+            "</div></div>\n"
     return html
 
 def getMp4Content(record):
-    html=""
-    html+="<tr><td>" + record[2] + "</td>"
-    html+="<td><video controls><source src='"+record[4]+ "/" + record[3]+ "' type='video/mp4'></video></td>"
-    html+="</tr>\n"
+    html = ""
+    html += "<div class='message'>" \
+            "<div class='avatar'></div>" \
+            "<div class='message-content'>" \
+            "<div class='message-bubble'>" \
+            "<video preload='none' controls>" \
+            "<source src='" + record[4] + "/" + record[3] + "' type='video/mp4'></video></div>" \
+            "<span class='message-time'>" + record[2] + "</span>" \
+            "</div></div>\n"
     return html
 
 
-def genMessageFile(member, month, content):
-    html="";
-    html+=HTML_HEADER
-    for record in content:
-      if record[3].endswith(".txt"):
-        html+=getTxtContent(record)
-      elif record[3].endswith(".jpg"):
-        html+=getJpgContent(record)
-      elif record[3].endswith(".mp4"):
-        html+=getMp4Content(record)
-    html+=HTML_FOOTER
-
-    with open(getMessageFileName(member, month), 'w', encoding='utf-8') as file:
-      file.write(html)
+def genMessageFile(member, contents_by_month):
+    html = getHtmlHeader()
+    
+    # 月選択セレクターを追加
+    html += "<div class='month-selector'><select onchange='showMonth(this.value)'>"
+    for month in sorted(contents_by_month.keys()):
+        formatted_month = month[:4] + "年" + month[4:] + "月"
+        html += f"<option value='{month}'>{formatted_month}</option>"
+    html += "</select></div>"
+    
+    html += "<div class='chat-container'>"
+    
+    # 月ごとにメッセージグループを作成
+    for month, content in sorted(contents_by_month.items()):
+        # 日付でメッセージをソート
+        sorted_content = sorted(content, key=lambda x: x[2])  # x[2]は日時文字列
+        
+        html += f"<div id='month-{month}' class='message-group'>"
+        for record in sorted_content:
+            if record[3].endswith(".txt"):
+                html += getTxtContent(record)
+            elif record[3].endswith(".jpg"):
+                html += getJpgContent(record)
+            elif record[3].endswith(".mp4"):
+                html += getMp4Content(record)
+        html += "</div>"
+    
+    html += "</div>" + HTML_FOOTER
+    
+    output_file = os.path.join(OUTPUT_PATH, f"{member}.html")
+    with open(output_file, 'w', encoding='utf-8') as file:
+        file.write(html)
 
 def loopList():
     for member in MEMBER_LIST:
-      for month in MONTH_LIST:
-        content=genMonthlyPackContent(member, month)
-        if content:
-          genMessageFile(member, month, content)
+        # メンバーごとに月別のコンテンツを収集
+        contents_by_month = {}
+        for month in MONTH_LIST:
+            content = genMonthlyPackContent(member, month)
+            if content:
+                contents_by_month[month] = content
+        if contents_by_month:
+            genMessageFile(member, contents_by_month)
 
 
 if __name__ == "__main__":
@@ -159,7 +231,9 @@ if __name__ == "__main__":
         OUTPUT_PATH = sys.argv[2]  
         if len(sys.argv) ==4:    
             NICK_NAME = sys.argv[3]
-        
+        if len(sys.argv) == 5:    # アイコンパスのオプションを追加
+            AVATAR_IMAGE_PATH = sys.argv[4]
+            print(AVATAR_IMAGE_PATH)
         print(f"Generating messages from: {parent_dir} and saving to: {OUTPUT_PATH}")
         MAIN_LIST=getFileNamesFromColMsg(parent_dir)
         MEMBER_LIST.sort()
